@@ -3,9 +3,19 @@ package rinotify
 
 import (
 	"golang.org/x/exp/inotify"
+	"os"
+	"io/ioutil"
+	"path"
 )
 
-func RecursivelyWatch(path string, flags uint32) <-chan *inotify.Event {
+// Recursively watch the given path and its children (if it's a directory) for inotify events.
+// The passed flags are as described in the inotify package.
+//
+// Be warned: creating nested directories in rapid succession (as you would do with `mkdir -p dir1/dir2/dir3`)
+// may cause the grandchildren and their descendants unwatched by this watcher since it doesn't allow inotify enough
+// time between the creation of the child directory and starting to watch it so it would know about the root dir's
+// grand child.
+func RecursivelyWatch(fsPath string, flags uint32) <-chan *inotify.Event {
 
 	output := make(chan *inotify.Event)
 
@@ -14,7 +24,7 @@ func RecursivelyWatch(path string, flags uint32) <-chan *inotify.Event {
 		panic(err)
 	}
 
-	err = watcher.Watch(path)
+	err = watcher.Watch(fsPath)
 
 	go func() {
 		for {
@@ -44,6 +54,22 @@ func RecursivelyWatch(path string, flags uint32) <-chan *inotify.Event {
 			}
 		}
 	}()
+
+	// If the fsPath is a directory, watch over pre-existing children
+	stat, err := os.Stat(fsPath)
+	if err != nil {
+		panic(err)
+	}
+
+	if stat.IsDir() {
+		children, err := ioutil.ReadDir(fsPath)
+		if err != nil {
+			panic(err)
+		}
+		for _, child := range children {
+			go watchChild(output, RecursivelyWatch(path.Join(fsPath, child.Name()), flags))
+		}
+	}
 
 	return output
 }

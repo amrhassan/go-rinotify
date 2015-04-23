@@ -5,43 +5,56 @@ import (
 	"golang.org/x/exp/inotify"
 	"io/ioutil"
 	"os"
-	"os/user"
 	"path"
 	"testing"
 	"time"
 )
 
+
 func TestRinotify(t *testing.T) {
 
-	// Create a temp dir that's in the user's homedir, because xattr doesn't work on tmpfs
-	user, err := user.Current()
+	touch := func(filePath string) {
+		err := ioutil.WriteFile(filePath, []byte{}, os.ModePerm)
+		assert.NoError(t, err)
+	}
+
+	mkDirAll := func(path string) {
+		err := os.MkdirAll(path, os.ModePerm)
+		assert.NoError(t, err)
+	}
+
+	tmpDir, err := ioutil.TempDir("", "rnotifytest")
 	assert.NoError(t, err)
-	tmpDir, err := ioutil.TempDir(user.HomeDir, "workerd-collectortest")
-	assert.NoError(t, err)
-	defer func() {
-		err := os.RemoveAll(tmpDir)
-		if err != nil {
-			panic(err)
-		}
-	}()
+
+	subdir0 := path.Join(tmpDir, "subdir0")
+	mkDirAll(subdir0)
 
 	watcher := RecursivelyWatch(tmpDir, inotify.IN_CREATE)
 
-	path1 := path.Join(tmpDir, "subdir1")
-	path2 := path.Join(path1, "file1")
+	subdir1 := path.Join(tmpDir, "subdir1")
+	file0 := path.Join(tmpDir, "file0")
+	subdir1file1 := path.Join(subdir1, "file1")
+	subdir0file2 := path.Join(subdir0, "file2")
 
-	err = os.MkdirAll(path1, os.ModePerm)
-	assert.NoError(t, err)
+	// Everything starting here should be caught by inotify
 
+	mkDirAll(subdir1)
 	// Sadly newly-created directories are not watched right away so we need to give inotify some time to catch up
-	time.Sleep(1 * time.Nanosecond)
+	time.Sleep(1 * time.Millisecond)
 
-	err = ioutil.WriteFile(path2, []byte("TOUCHED"), os.ModePerm)
-	assert.NoError(t, err)
+	touch(subdir1file1)
+	touch(subdir0file2)
+	touch(file0)
 
-	ev1 := <-watcher
-	ev2 := <-watcher
+	ev1Name := (<-watcher).Name
+	ev2Name := (<-watcher).Name
+	ev3Name := (<-watcher).Name
+	ev4Name := (<-watcher).Name
 
-	assert.Equal(t, path1, ev1.Name)
-	assert.Equal(t, path2, ev2.Name)
+	receivedNames := []string{ev1Name, ev2Name, ev3Name, ev4Name}
+
+	assert.Contains(t, receivedNames, subdir1)
+	assert.Contains(t, receivedNames, subdir1file1)
+	assert.Contains(t, receivedNames, subdir0file2)
+	assert.Contains(t, receivedNames, file0)
 }

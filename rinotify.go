@@ -12,9 +12,9 @@ import (
 // The passed flags are as described in the inotify package.
 //
 // Be warned: creating nested directories in rapid succession (as you would do with `mkdir -p dir1/dir2/dir3`)
-// may cause the grandchildren and their descendants unwatched by this watcher since it doesn't allow inotify enough
-// time between the creation of the child directory and starting to watch it so it would know about the root dir's
-// grand child.
+// may result in the grandchildren (dir2 and dir3 in this example) and their descendants to be undetected by
+// this watcher. This is caused by inotifier having not given enough time to watch a directory to detect its child
+// before actually creating the child.
 func RecursivelyWatch(fsPath string, flags uint32) <-chan *inotify.Event {
 
 	output := make(chan *inotify.Event)
@@ -25,6 +25,9 @@ func RecursivelyWatch(fsPath string, flags uint32) <-chan *inotify.Event {
 	}
 
 	err = watcher.Watch(fsPath)
+	if err != nil {
+		panic(err)
+	}
 
 	go func() {
 		for {

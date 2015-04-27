@@ -3,10 +3,13 @@ package rinotify
 
 import (
 	"golang.org/x/exp/inotify"
-	"os"
 	"io/ioutil"
+	"os"
 	"path"
 )
+
+// Flags that must be mixed in for the recursive watcher to work
+const requiredFlags = inotify.IN_ISDIR | inotify.IN_CREATE | inotify.IN_DELETE_SELF
 
 // Recursively watch the given path and its children (if it's a directory) for inotify events.
 // The passed flags are as described in the inotify package.
@@ -15,16 +18,16 @@ import (
 // may result in the grandchildren (dir2 and dir3 in this example) and their descendants to be undetected by
 // this watcher. This is caused by inotifier having not given enough time to watch a directory to detect its child
 // before actually creating the child.
-func RecursivelyWatch(fsPath string, flags uint32) <-chan *inotify.Event {
+func RecursivelyWatch(fsPath string, flags uint32, eventBufferSize uint) <-chan *inotify.Event {
 
-	output := make(chan *inotify.Event)
+	output := make(chan *inotify.Event, eventBufferSize)
 
 	watcher, err := inotify.NewWatcher()
 	if err != nil {
 		panic(err)
 	}
 
-	err = watcher.Watch(fsPath)
+	err = watcher.AddWatch(fsPath, flags|requiredFlags)
 	if err != nil {
 		panic(err)
 	}
@@ -44,7 +47,7 @@ func RecursivelyWatch(fsPath string, flags uint32) <-chan *inotify.Event {
 				} else if isNewChildDir(ev) {
 
 					// Watch it asynchronously, propagate received events upwards until child dies
-					go watchChild(output, RecursivelyWatch(ev.Name, flags))
+					go watchChild(output, RecursivelyWatch(ev.Name, flags, eventBufferSize))
 				}
 
 				// Also if appropriate, propagate up the stack
@@ -70,7 +73,7 @@ func RecursivelyWatch(fsPath string, flags uint32) <-chan *inotify.Event {
 			panic(err)
 		}
 		for _, child := range children {
-			go watchChild(output, RecursivelyWatch(path.Join(fsPath, child.Name()), flags))
+			go watchChild(output, RecursivelyWatch(path.Join(fsPath, child.Name()), flags, eventBufferSize))
 		}
 	}
 

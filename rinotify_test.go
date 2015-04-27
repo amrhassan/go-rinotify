@@ -10,7 +10,6 @@ import (
 	"time"
 )
 
-
 func TestRinotify(t *testing.T) {
 
 	touch := func(filePath string) {
@@ -29,7 +28,7 @@ func TestRinotify(t *testing.T) {
 	subdir0 := path.Join(tmpDir, "subdir0")
 	mkDirAll(subdir0)
 
-	watcher := RecursivelyWatch(tmpDir, inotify.IN_CREATE)
+	watcher := RecursivelyWatch(tmpDir, inotify.IN_CREATE, 50)
 
 	subdir1 := path.Join(tmpDir, "subdir1")
 	file0 := path.Join(tmpDir, "file0")
